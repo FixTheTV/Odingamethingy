@@ -117,6 +117,9 @@ draw_debug :: proc(player: Player, box: rl.Rectangle) {
 }
 
 main :: proc() {
+    rl.SetConfigFlags({.VSYNC_HINT})
+    rl.SetTargetFPS(60)
+
     rl.InitWindow(
         i32(WINDOW_WIDTH),
         i32(WINDOW_HEIGHT),
@@ -149,6 +152,7 @@ main :: proc() {
         rl.DrawFPS(0,0)
 
         draw_player(player)
+        draw_debug(player,box)
 
         rl.EndDrawing()
     }

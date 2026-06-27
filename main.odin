@@ -69,7 +69,7 @@ renderSystem :: proc(field: ^BattleField){
 }
 
 
-collisionSystem :: proc (field: ^BattleField, dt: f32){
+collisionSystem :: proc (field: ^BattleField){
 
     right := field.box.x + field.box.width
     bottom := field.box.y + field.box.height
@@ -180,7 +180,7 @@ main :: proc() {
         dt := rl.GetFrameTime()
 
         movementSystem(&gameMap,dt)
-        collisionSystem(&gameMap,dt)
+        collisionSystem(&gameMap)
 
         rl.BeginDrawing()
 
@@ -189,8 +189,9 @@ main :: proc() {
 
         renderSystem(&gameMap)
 
+        rl.DrawFPS(0,0)
         rl.EndDrawing()
 
-        rl.DrawFPS(0,0)
+
     }
 }

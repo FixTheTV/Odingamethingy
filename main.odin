@@ -5,6 +5,7 @@ import random "core:math/rand"
 import la "core:math/linalg"
 import rl "vendor:raylib"
 
+Entity :: distinct u32
 
 WINDOW_WIDTH  :: f32(1280)
 WINDOW_HEIGHT :: f32(720)
@@ -12,32 +13,40 @@ WINDOW_HEIGHT :: f32(720)
 BOX_WIDTH  :: f32(600)
 BOX_HEIGHT :: f32(600)
 
-PLAYER_WIDTH  :: f32(60)
-PLAYER_HEIGHT :: f32(60)
+ComponentFlag :: enum {
+    Position,
+    Velocity,
+    Sprite,
+    Bound,
+}
 
-Entity :: distinct u32
+ComponentMask :: bit_set[ComponentFlag; u32]
 
+MOVEMENT_MASK :: ComponentMask{.Position, .Velocity}
+COLLISION_MASK :: ComponentMask{.Position, .Bound}
+RENDER_MASK :: ComponentMask{.Position, .Sprite}
 
 BattleField :: struct {
-    isMoveable : [100]bool,
-    isDrawable: [100]bool,
 
     entityCount : int,
-    speeds : [100]f32,
     entities : [100]Entity,
+    
     positions : #soa [100]rl.Vector2,
-    directions : #soa [100]rl.Vector2,
-    textures : #soa [100]rl.Texture2D,
+    velocities : #soa [100]rl.Vector2,
+    masks : [100]ComponentMask, 
+    textures: [100]rl.Texture2D,
 
-    box : rl.Rectangle
+    entityBound : [100]rl.Vector2,
+
+    box : rl.Rectangle,
 
 }
 
 
 movementSystem :: proc(field : ^BattleField, dt : f32){
     for i in 0..<field.entityCount{
-        if field.isMoveable[i]{
-            field.positions[i] += field.directions[i] * field.speeds[i] * dt 
+        if MOVEMENT_MASK <= field.masks[i]{
+            field.positions[i] += field.velocities[i] * dt 
         }
     }
 }
@@ -45,7 +54,7 @@ movementSystem :: proc(field : ^BattleField, dt : f32){
 
 renderSystem :: proc(field: ^BattleField){
     for i in 0..<field.entityCount{
-        if field.isDrawable[i]{
+        if RENDER_MASK <= field.masks[i]{
 
             source := rl.Rectangle{
                 0,
@@ -76,38 +85,44 @@ collisionSystem :: proc (field: ^BattleField){
 
     for i in 0..<field.entityCount{
 
-        if field.positions[i].x < field.box.x {
+        if COLLISION_MASK <= field.masks[i]{
 
-            field.positions[i].x = field.box.x
-            field.directions[i].x *= -1
+            if field.positions[i].x < field.box.x {
 
-        } else if field.positions[i].x + PLAYER_WIDTH > right {
+                field.positions[i].x = field.box.x
+                field.velocities[i].x *= -1
 
-            field.positions[i].x = right - PLAYER_WIDTH
-            field.directions[i].x *= -1
+            }   else if field.positions[i].x + field.entityBound[i].x > right {
 
+                field.positions[i].x = right - field.entityBound[i].x
+                field.velocities[i].x *= -1
+
+            }
+
+            if field.positions[i].y < field.box.y {
+
+                field.positions[i].y = field.box.y
+                field.velocities[i].y *= -1
+
+            } else if field.positions[i].y + field.entityBound[i].y > bottom {
+
+                field.positions[i].y = bottom - field.entityBound[i].y
+                field.velocities[i].y *= -1
+
+            }
         }
 
-        if field.positions[i].y < field.box.y {
 
-            field.positions[i].y = field.box.y
-            field.directions[i].y *= -1
-
-        } else if field.positions[i].y + PLAYER_HEIGHT > bottom {
-
-            field.positions[i].y = bottom - PLAYER_HEIGHT
-            field.directions[i].y *= -1
-
-        }
     }
 }
+
 
 getEntityRect :: proc(field : ^BattleField, index : int) -> rl.Rectangle {
     return {
         field.positions[index].x,
         field.positions[index].y,
-        PLAYER_WIDTH,
-        PLAYER_HEIGHT,
+        field.entityBound[index].x,
+        field.entityBound[index].y,
     }
 }
 
@@ -121,9 +136,42 @@ loadTexture :: proc(name: cstring) -> rl.Texture2D {
         return rl.LoadTexture(path)
     }
 
-    fmt.println("Missing texture:", name)
+    fmt.println("Missing texture:", path)
     return fallback
 }
+
+createEntity :: proc (field : ^BattleField) -> int{
+    index := field.entityCount
+    field.entities[index] = Entity(index)
+    field.entityCount += 1
+    return index
+}
+
+addPosition :: proc (field : ^BattleField, entity : int, pos : rl.Vector2){
+    field.positions[entity] = pos
+
+    field.masks[entity] += ComponentMask{.Position}
+}
+
+addVelocity :: proc (field: ^BattleField, entity : int, vel : rl.Vector2){
+    field.velocities[entity] = vel
+
+    field.masks[entity] += ComponentMask{.Velocity}
+}
+
+addBound :: proc (field: ^BattleField, entity : int, bound: rl.Vector2){
+    field.entityBound[entity].x = bound.x
+    field.entityBound[entity].y = bound.y
+
+    field.masks[entity] += ComponentMask{.Bound}
+}
+
+addSprite :: proc (field: ^BattleField, entity: int, sprite : rl.Texture2D){
+    field.textures[entity] = sprite
+
+    field.masks[entity] += ComponentMask{.Sprite}
+}
+
 
 
 
@@ -141,26 +189,6 @@ main :: proc() {
         BOX_HEIGHT,
     }
 
-    entityIndex01 := gameMap.entityCount
-    gameMap.entities[entityIndex01] = Entity(001)
-    gameMap.positions[entityIndex01] = {gameMap.box.x + gameMap.box.width * 0.5 - PLAYER_WIDTH * 0.5, gameMap.box.y + gameMap.box.height * 0.5 - PLAYER_HEIGHT * 0.5}
-    gameMap.directions[entityIndex01] = {random.float32_range(-1,1), random.float32_range(-1,1)}
-    gameMap.speeds[entityIndex01] = f32(250)
-    gameMap.isDrawable[entityIndex01] = true
-    gameMap.isMoveable[entityIndex01] = true
-    gameMap.entityCount += 1
-
-
-
-    entityIndex02 := gameMap.entityCount
-    gameMap.entities[entityIndex02] = Entity(002)
-    gameMap.positions[entityIndex02] = {gameMap.positions[entityIndex01].x, gameMap.positions[entityIndex01].y}
-    gameMap.directions[entityIndex02] = {0,0}
-    gameMap.speeds[entityIndex02] = f32(0)
-    gameMap.isDrawable[entityIndex02] = true
-    gameMap.isMoveable[entityIndex02] = false
-    gameMap.entityCount += 1
-
 
     rl.InitWindow(
         i32(WINDOW_WIDTH),
@@ -168,10 +196,14 @@ main :: proc() {
         "Son",
     )
 
-    gameMap.textures[entityIndex01] = loadTexture("player.png")
-    defer rl.UnloadTexture(gameMap.textures[entityIndex01])
-    gameMap.textures[entityIndex02] = loadTexture("enemy.png")
-    defer rl.UnloadTexture(gameMap.textures[entityIndex02])
+    player := createEntity(&gameMap)
+
+    addBound(&gameMap,player,{60,60})
+    addPosition(&gameMap, player, {gameMap.box.x + gameMap.box.width * 0.5 - gameMap.entityBound[player].x * 0.5, gameMap.box.y + gameMap.box.height * 0.5 - gameMap.entityBound[player].y * 0.5})
+    addSprite(&gameMap,player,loadTexture(fmt.caprintf("%i.png", player)))
+    defer rl.UnloadTexture(gameMap.textures[player])
+    addVelocity(&gameMap,player,{random.float32_range(-1,1), random.float32_range(-1,1)}*250)
+
 
     defer rl.CloseWindow()
 
